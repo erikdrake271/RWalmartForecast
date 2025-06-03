@@ -1,0 +1,660 @@
+---
+title: "All Models"
+---
+# ML MODELS
+## Parallel Processing
+```{r}
+library(doParallel)
+parallel_stop()
+
+detectCores()
+doParallel::registerDoParallel(cores = 7)
+```
+
+
+```{r}
+
+
+## Naive
+wflw_fit_naive <- workflow() %>%
+  add_model(
+    naive_reg(
+      mode = "regression", 
+      id = NULL,
+      seasonal_period = 366) %>% 
+      set_engine("snaive")) %>%
+  add_recipe(recipe_spec) 
+
+
+
+# XGBOOST ----
+# - Strengths: Best for seasonality & complex patterns
+# - Weaknesses: 
+#   - Cannot predict beyond the maximum/minimum target (e.g. increasing trend)
+# - Solution: Model trend separately (if needed). 
+#   - Can combine with ARIMA, Linear Regression, Mars, or Prophet
+#   - prophet_boost & arima_boost: Do this
+# XGBoost Models
+wflw_fit_xgb_1 <- workflow() %>%
+  add_model(boost_tree(
+    mode = "regression",
+    mtry = 25, 
+    trees = 1000, 
+    min_n = 2, 
+    tree_depth = 12, 
+    learn_rate = 0.3, 
+    loss_reduction = 0
+  ) %>%
+    set_engine("xgboost")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+wflw_fit_xgb_2 <- workflow() %>%
+  add_model(boost_tree("regression", learn_rate = 0.50) %>% set_engine("xgboost")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# RANDOM FOREST ----
+# - Strengths: Can model seasonality very well
+# - Weaknesses: 
+#   - Cannot predict beyond the maximum/minimum target (e.g. increasing trend)
+# - Solution: Model trend separately (if needed). 
+#   - Can combine with ARIMA, Linear Regression, Mars, or Prophet
+# Random Forest
+set.seed(123)
+wflw_fit_rf <- workflow() %>%
+  add_model(rand_forest(
+    mode  = "regression", 
+    mtry  = 25, 
+    trees = 1000, 
+    min_n = 25
+  ) %>%
+    set_engine("ranger")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# Prophet
+wflw_fit_prophet <- workflow() %>%
+  add_model(spec = prophet_reg() %>% set_engine("prophet")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# Prophet Boost
+wflw_fit_prophet_boost <- workflow() %>%
+  add_model(
+    spec = prophet_boost(
+      # turn off all seasonality, as xgboost will pick this up
+      seasonality_daily  = FALSE, 
+      seasonality_weekly = FALSE, 
+      seasonality_yearly = FALSE,
+      
+      # xgboost
+      mtry = 25, 
+      trees = 1000, 
+      min_n = 1, 
+      tree_depth = 6,
+      learn_rate = 0.5, 
+      loss_reduction = 0
+    ) %>% 
+      set_engine("prophet_xgboost")
+    ) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# THIEF
+wflw_fit_thief <- workflow() %>%
+  add_model(temporal_hierarchy() %>% set_engine("thief")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# ELASTIC NET REGRESSION ----
+# - Strengths: Very good for trend
+# - Weaknesses: Not as good for complex patterns (i.e. seasonality)
+# GLMNet
+wflw_fit_glmnet <- workflow() %>%
+  add_model(
+    linear_reg(
+      mode = "regression", 
+      penalty = 0.01, 
+      mixture = 0) %>% 
+    set_engine("glmnet")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# MARS ----
+# Multiple Adaptive Regression Splines
+# - Strengths: Best algorithm for modeling trend
+# - Weaknesses: 
+#   - Not good for complex patterns (i.e. seasonality)
+#   - Don't combine with splines! MARS makes splines.
+# - Key Concept: Can combine with xgboost (better seasonality detection)
+#   - prophet_reg: uses a technique similar to mars for modeling trend component
+#   - prophet_boost: Uses prophet for trend, xgboost for features
+# MARS
+wflw_fit_mars <- workflow() %>%
+  add_model(mars(
+    mode = "regression", 
+    num_terms = 10
+  ) %>% 
+    set_engine("earth", endspan = 200)) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# SVM POLY ----
+# Strengths: Well-rounded algorithm
+# Weaknesses: Needs tuned or can overfit
+# SVM Poly
+wflw_fit_svm_poly <- workflow() %>%
+  add_model(svm_poly(
+    mode = "regression", 
+    cost = 10, 
+    degree = 1,
+    scale_factor = 1,
+    margin = 0.1
+  ) %>%
+    set_engine("kernlab")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# SVM RADIAL BASIS ----
+# Strengths: Well-rounded algorithm
+# Weaknesses: Needs tuned or can overfit
+# SVM Radial
+wflw_fit_svm_rdl <- workflow() %>%
+  add_model(svm_rbf(
+    mode = "regression",
+    cost = 1, 
+    rbf_sigma = 0.01,
+    margin = 0.1
+  ) %>%
+    set_engine("kernlab")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+
+
+# K-NEAREST NEIGHBORS ----
+# - Strengths: Uses neighboring points to estimate 
+# - Weaknesses: Cannot predict beyond the maximum/minimum target (e.g. increasing trend)
+# - Solution: Model trend separately (if needed). 
+#   - Can combine with ARIMA, Linear Regression, Mars, or Prophet
+# Show issue when trend extends beyond maximum value ----
+# K-Nearest Neighbors
+set.seed(123)
+wflw_fit_knn <- workflow() %>%
+  add_model(nearest_neighbor(
+    mode = "regression",
+    neighbors = 50, 
+    dist_power = 10, 
+    weight_func = "optimal"
+  ) %>%
+    set_engine("kknn")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# CUBIST ----
+# - Like XGBoost, but the terminal (final) nodes are fit using linear regression
+# - Does better than tree-based algorithms when time series has trend
+# - Can predict beyond maximum
+# Cubist
+set.seed(123)
+wflw_fit_cubist <- workflow() %>%
+  add_model(cubist_rules(
+    committees = 50, 
+    neighbors = 7, 
+    max_rules = 100
+  ) %>%
+    set_engine("Cubist")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# NEURAL NET ----
+# - Single Layer Multi-layer Perceptron Network
+# - Simple network - Like linear regression
+# - Can improve learning by adding more hidden units, epochs, etc
+# Neural Net
+set.seed(123)
+wflw_fit_nnet <- workflow() %>%
+  add_model(mlp(
+    mode = "regression",
+    hidden_units = 10,
+    penalty = 1, 
+    epochs = 100
+  ) %>%
+    set_engine("nnet")) %>%
+  add_recipe(recipe_spec_ml) %>%
+  fit(training(splits))
+
+
+# NNETAR ----
+# - NNET with Lagged Features (AR)
+# - Is a sequential model (comes from the forecast package)
+# - Must include date feature
+# NNETAR
+set.seed(123)
+wflw_fit_nnetar <- workflow() %>%
+  add_model(nnetar_reg(
+    non_seasonal_ar = 2,
+    seasonal_ar     = 1, 
+    hidden_units    = 10,
+    penalty         = 10,
+    num_networks    = 10,
+    epochs          = 50
+  ) %>%
+    set_engine("nnetar")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits) %>% drop_na())
+
+
+
+
+## ARIMA BOOST
+wflw_fit_arima_boost <- workflow() %>%
+  add_model(arima_boost(
+    seasonal_period = 7,
+    
+    # xgboost
+    mtry = 50, 
+    trees = 1000,
+    min_n = 7, 
+    tree_depth = 12, 
+    learn_rate = 0.7, 
+    loss_reduction = 0
+    )  %>%
+  set_engine("arima_xgboost")) %>%
+  add_recipe(recipe_spec) %>%
+  fit(training(splits))
+```
+
+
+## Accuracy Check
+```{r}
+# * ACCURACY CHECK ----
+submodels_1_tbl <- modeltime_table(
+  wflw_fit_xgb_1,
+  wflw_fit_xgb_2,
+  wflw_fit_rf,
+  wflw_fit_prophet,
+  wflw_fit_prophet_boost,
+  wflw_fit_thief,
+  wflw_fit_glmnet,
+  wflw_fit_mars,
+  wflw_fit_svm_poly,
+  wflw_fit_svm_rdl,
+  wflw_fit_knn,
+  wflw_fit_cubist,
+  wflw_fit_nnet,
+  wflw_fit_nnetar
+) %>%
+  update_model_description(1, "xgb 1") %>%
+  update_model_description(2, "xgb 2") %>%
+  update_model_description(3, "rf") %>%
+  update_model_description(4, "prophet") %>%
+  update_model_description(5, "prophet boost") %>%
+  update_model_description(6, "thief") %>%
+  update_model_description(7, "glmnet") %>%
+  update_model_description(8, "mars") %>%
+  update_model_description(9, "svm poly") %>%
+  update_model_description(10, "svm rdl") %>%
+  update_model_description(11, "knn") %>%
+  update_model_description(12, "cubist") %>%
+  update_model_description(13, "nnet") %>%
+  update_model_description(14, "nnetar")
+
+
+# calibrate on testing data
+submodels_calibrate <- submodels_1_tbl %>%
+  modeltime_calibrate(new_data = testing(splits)) 
+
+
+# GLOBAL accuracy
+submodels_calibrate %>%
+  modeltime_accuracy(acc_by_id = FALSE) %>%
+  arrange(rmse)
+```
+
+
+
+# --
+# 4.1 MODELS w/ TUNE
+## Resamples
+```{r}
+# K-Fold: Non-Sequential Models
+set.seed(123)
+resamples_kfold <- training(splits) %>% vfold_cv(v = 10)
+
+
+# visualize the 10 folds (90/10 testing)
+resamples_kfold %>%
+    tk_time_series_cv_plan() %>%
+    plot_time_series_cv_plan(date, rate, .facet_ncol = 2)
+
+
+# TS Cross Validation: Sequential Models
+resamples_tscv <- time_series_cv(
+  data        = training(splits) %>% drop_na(),
+  cumulative  = TRUE,
+  assess      = 20,
+  skip        = 10,
+  slice_limit = 10
+)
+
+resamples_tscv %>%
+  tk_time_series_cv_plan() %>%
+  plot_time_series_cv_plan(.date_var = date, .value = rate)
+```
+
+
+## XGBoost Tune
+```{r}
+model_spec_xgboost_tune <- boost_tree(
+    mode            = "regression", 
+    mtry            = tune(),
+    trees           = tune(),
+    min_n           = tune(),
+    tree_depth      = tune(),
+    learn_rate      = tune(),
+    loss_reduction  = tune()
+) %>% 
+    set_engine("xgboost")
+
+
+wflw_spec_xgboost_tune <- workflow() %>%
+    add_model(model_spec_xgboost_tune) %>%
+    add_recipe(recipe_spec_ml)
+
+
+# Tuning
+set.seed(123)
+tune_results_xgboost <- wflw_spec_xgboost_tune %>%
+    tune_grid(
+        resamples  = resamples_kfold,
+        param_info = extract_parameter_set_dials(wflw_spec_xgboost_tune) %>%
+            update(
+                learn_rate = learn_rate(range = c(0.001, 0.400), trans = NULL)
+            ),
+        grid = 10,
+        control = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+
+
+# ** Results
+tune_results_xgboost %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_xgboost_tuned <- wflw_spec_xgboost_tune %>%
+  finalize_workflow(select_best(tune_results_xgboost, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+## RF Tune
+```{r, include=FALSE}
+model_spec_rf_tune <- rand_forest(
+    mode    = "regression",
+    mtry    = tune(),
+    trees   = tune(),
+    min_n   = tune()
+) %>% 
+    set_engine("randomForest")
+
+
+wflw_spec_rf_tune <- workflow() %>%
+    add_model(model_spec_rf_tune) %>%
+    add_recipe(recipe_spec_ml)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_rf <- wflw_spec_rf_tune %>%
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 5,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+
+
+# ** Results
+best_rf_tuned <- tune_results_rf %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_rf_tuned <- wflw_spec_rf_tune %>%
+  finalize_workflow(select_best(tune_results_rf, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+## KNN Tune
+```{r, include=FALSE}
+model_spec_knn_tune <- nearest_neighbor(
+    mode        = "regression",
+    neighbors   = tune(), 
+    dist_power  = tune(), 
+    weight_func = "optimal"
+) %>%
+    set_engine("kknn")
+
+
+wflw_spec_knn_tune <- workflow() %>%
+    add_model(model_spec_knn_tune) %>%
+    add_recipe(recipe_spec_ml)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_knn <- wflw_spec_knn_tune %>%
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 5,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+
+
+# ** Results
+best_knn_tuned <- tune_results_knn %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_knn_tuned <- wflw_spec_knn_tune %>%
+  finalize_workflow(select_best(tune_results_knn, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+## Cubist Tune
+```{r, include=FALSE}
+model_spec_cubist_tune <- cubist_rules(
+    committees = tune(),
+    neighbors  = tune(), 
+    max_rules  = tune()
+  ) %>%
+    set_engine("Cubist")
+
+
+wflw_spec_cubist_tune <- workflow() %>%
+    add_model(model_spec_cubist_tune) %>%
+    add_recipe(recipe_spec_ml)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_cubist <- wflw_spec_cubist_tune %>%
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 5,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+
+
+# ** Results
+best_cubist_tuned <- tune_results_cubist %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_cubist_tuned <- wflw_spec_cubist_tune %>%
+  finalize_workflow(select_best(tune_results_cubist, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+## SVM Poly Tune
+```{r, include=FALSE}
+model_spec_svm_tune <- svm_poly(
+    mode         = "regression", 
+    cost         = tune(), 
+    degree       = tune(),
+    scale_factor = tune(),
+    margin       = tune()
+) %>%
+    set_engine("kernlab")
+
+
+# ** create latin hypercube grid
+set.seed(123)
+grid_spec_svm <- grid_latin_hypercube(
+  parameters(model_spec_svm_tune),
+  size = 15)
+
+wflw_spec_svm_tune <- workflow() %>%
+    add_model(model_spec_svm_tune) %>%
+    add_recipe(recipe_spec)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_svm <- wflw_spec_svm_tune %>%
+    tune_grid(
+        resamples = resamples_tscv,
+        grid      = grid_spec_svm,
+        metrics   = default_forecast_accuracy_metric_set(),
+        control   = control_grid(verbose = TRUE, allow_par = TRUE, save_pred = TRUE))
+
+
+# ** Results
+best_svm_tuned <- tune_results_svm %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_svm_tuned <- wflw_spec_svm_tune %>%
+  finalize_workflow(select_best(tune_results_svm, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+## NNETAR Tune
+```{r, eval=FALSE}
+model_spec_nnetar_tune <- nnetar_reg(
+    non_seasonal_ar = tune(id = "non_seasonal_ar"),
+    seasonal_ar     = tune(), 
+    hidden_units    = tune(),
+    penalty         = tune(),
+    num_networks    = tune(),
+    epochs          = tune()
+) %>%
+    set_engine("nnetar")
+
+
+# ** create latin hypercube grid
+set.seed(123)
+grid_spec_nnetar_1 <- grid_latin_hypercube(
+  parameters(model_spec_nnetar_tune),
+  size = 15)
+
+wflw_spec_nnetar_tune <- workflow() %>%
+    add_model(model_spec_nnetar_tune) %>%
+    add_recipe(recipe_spec)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_nnetar_1 <- wflw_spec_nnetar_tune %>%
+    tune_grid(
+        resamples = resamples_tscv,
+        grid      = grid_spec_nnetar_1,
+        metrics   = default_forecast_accuracy_metric_set(),
+        control   = control_grid(verbose = TRUE, allow_par = TRUE, save_pred = TRUE))
+
+
+# ** Results
+best_nnetar_tuned_1 <- tune_results_nnetar_1 %>% show_best("rmse", n = Inf)
+
+
+# visualize
+g <- tune_results_nnetar_1 %>%
+  autoplot() +
+  geom_smooth(se = FALSE)
+
+ggplotly(g)
+
+
+# ** fine-tune latin hypercube grid
+set.seed(123)
+grid_spec_nnetar_2 <- grid_latin_hypercube(
+  non_seasonal_ar(range = c(1,2)),
+  seasonal_ar(range = c(2, 2)),
+  hidden_units(range = c(4, 10)),
+  penalty(range = c(-5.8, -1), trans = scales::log10_trans()),
+  epochs(range = c(717, 930)),
+  num_networks(range = c(5, 35)),
+  size = 15)
+
+
+# ** Tuning
+set.seed(123)
+tune_results_nnetar_2 <- wflw_spec_nnetar_tune %>%
+    tune_grid(
+        resamples = resamples_tscv,
+        grid      = grid_spec_nnetar_2,
+        metrics   = default_forecast_accuracy_metric_set(),
+        control   = control_grid(verbose = TRUE, allow_par = TRUE, save_pred = TRUE))
+
+
+# ** Results
+best_nnetar_tuned_2 <- tune_results_nnetar_2 %>% show_best("rmse", n = Inf)
+
+
+# ** Finalize
+set.seed(123)
+wflw_fit_nnetar_tuned <- wflw_spec_nnetar_tune %>%
+  finalize_workflow(select_best(tune_results_nnetar_2, "rmse")) %>%
+  fit(training(splits))
+```
+
+
+
+# --
+# 5.0 EVALUATE FORECAST
+## Combine tuned & submodels
+```{r}
+submodels_2_tbl <- modeltime_table(
+  wflw_fit_xgboost_tuned,
+  wflw_fit_rf_tuned,
+  wflw_fit_knn_tuned,
+  wflw_fit_svm_tuned,
+  wflw_fit_cubist_tuned,
+  wflw_fit_nnetar_tuned
+) %>%
+  update_model_description(1, "xgb tuned") %>%
+  update_model_description(2, "rf tuned") %>%
+  update_model_description(3, "knn tuned") %>%
+  update_model_description(4, "svm tuned") %>%
+  update_model_description(5, "cubist tuned") %>%
+  update_model_description(6, "nnetar tuned") %>%
+  combine_modeltime_tables(submodels_1_tbl)
+```
